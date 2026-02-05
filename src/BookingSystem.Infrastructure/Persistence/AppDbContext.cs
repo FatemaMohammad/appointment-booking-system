@@ -12,6 +12,7 @@ public class AppDbContext : DbContext
     public DbSet<Service> Services => Set<Service>();
     public DbSet<TimeSlot> TimeSlots => Set<TimeSlot>();
     public DbSet<Booking> Bookings => Set<Booking>();
+    public DbSet<BusinessHours> BusinessHours => Set<BusinessHours>();
 
 //Seed data - forudfyldning af databasen med nogle standard services
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -59,6 +60,15 @@ public class AppDbContext : DbContext
 modelBuilder.Entity<Booking>()
     .HasIndex(b => b.TimeSlotId)
     .IsUnique();
+
+    modelBuilder.Entity<BusinessHours>().HasData(
+    new BusinessHours { Id = 1, DayOfWeek = 1, OpenTime = new TimeSpan(9,0,0), CloseTime = new TimeSpan(16,0,0) }, // Monday
+    new BusinessHours { Id = 2, DayOfWeek = 2, OpenTime = new TimeSpan(9,0,0), CloseTime = new TimeSpan(16,0,0) }, // Tuesday
+    new BusinessHours { Id = 3, DayOfWeek = 3, OpenTime = new TimeSpan(9,0,0), CloseTime = new TimeSpan(16,0,0) }, // Wednesday
+    new BusinessHours { Id = 4, DayOfWeek = 4, OpenTime = new TimeSpan(9,0,0), CloseTime = new TimeSpan(16,0,0) }, // Thursday
+    new BusinessHours { Id = 5, DayOfWeek = 5, OpenTime = new TimeSpan(9,0,0), CloseTime = new TimeSpan(16,0,0) }  // Friday
+);
+
 
     }
 }
