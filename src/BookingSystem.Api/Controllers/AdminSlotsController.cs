@@ -3,9 +3,10 @@ using BookingSystem.Domain.Entities;
 using BookingSystem.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-
+using Microsoft.AspNetCore.Authorization;
 namespace BookingSystem.Api.Controllers;
 
+[Authorize(Roles = "Admin")]
 [ApiController]
 [Route("api/admin/slots")]
 public class AdminSlotsController : ControllerBase
@@ -57,4 +58,19 @@ public class AdminSlotsController : ControllerBase
 
         return Ok(new { created = newSlots.Count });
     }
+
+    [HttpGet("whoami")]
+public IActionResult WhoAmI()
+{
+    return Ok(new
+    {
+        isAuthenticated = User.Identity?.IsAuthenticated,
+        roleClaims = User.Claims
+            .Where(c => c.Type.Contains("role"))
+            .Select(c => new { c.Type, c.Value })
+            .ToList(),
+        isAdmin = User.IsInRole("Admin")
+    });
+}
+
 }
