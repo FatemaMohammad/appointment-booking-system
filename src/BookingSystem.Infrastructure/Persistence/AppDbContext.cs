@@ -13,6 +13,7 @@ public class AppDbContext : DbContext
     public DbSet<TimeSlot> TimeSlots => Set<TimeSlot>();
     public DbSet<Booking> Bookings => Set<Booking>();
     public DbSet<BusinessHours> BusinessHours => Set<BusinessHours>();
+    public DbSet<User> Users => Set<User>();
 
 //Seed data - forudfyldning af databasen med nogle standard services
     protected override void OnModelCreating(ModelBuilder modelBuilder)

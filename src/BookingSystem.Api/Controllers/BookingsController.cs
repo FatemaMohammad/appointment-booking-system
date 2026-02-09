@@ -2,11 +2,13 @@ using BookingSystem.Api.Contracts;
 using BookingSystem.Domain.Entities;
 using BookingSystem.Domain.Enums;
 using BookingSystem.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace BookingSystem.Api.Controllers;
-
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class BookingsController : ControllerBase
@@ -23,7 +25,8 @@ public class BookingsController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateBookingRequest req)
     {
         // Mock user (senere fra JWT)
-        var userId = 1;
+       var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
 
         // Validate service exists
         var service = await _db.Services.FirstOrDefaultAsync(s => s.Id == req.ServiceId && s.IsActive);
@@ -74,7 +77,8 @@ public class BookingsController : ControllerBase
     [HttpGet("me")]
     public async Task<IActionResult> GetMyBookings()
     {
-        var userId = 1;
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
 
         var bookings = await _db.Bookings
             .Where(b => b.UserId == userId)
@@ -97,7 +101,8 @@ public class BookingsController : ControllerBase
     [HttpPost("{id:int}/cancel")]
     public async Task<IActionResult> Cancel(int id)
     {
-        var userId = 1;
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
 
         var booking = await _db.Bookings.FirstOrDefaultAsync(b => b.Id == id && b.UserId == userId);
         if (booking is null)

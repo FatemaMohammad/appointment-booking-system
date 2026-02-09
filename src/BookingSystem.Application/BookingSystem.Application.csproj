@@ -10,4 +10,10 @@
     <ProjectReference Include="..\BookingSystem.Domain\BookingSystem.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Identity" Version="2.2.0" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.3.1" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.3.1" />
+  </ItemGroup>
+
 </Project>
