@@ -10,6 +10,7 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Add services
 builder.Services.AddControllers();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -55,6 +56,17 @@ builder.Services.AddScoped<AppPasswordHasher>();
 builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddScoped<SlotGenerator>();
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("frontend", policy =>
+    {
+        policy
+            .WithOrigins("http://localhost:5173", "http://localhost:5174")
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -77,6 +89,7 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+// Middleware
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -84,6 +97,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapGet("/", () => Results.Redirect("/swagger"));
+
+app.UseCors("frontend");
 
 app.UseAuthentication();
 app.UseAuthorization();
