@@ -25,6 +25,10 @@ public class AppDbContext : DbContext
             new Service { Id = 2, Name = "Teeth Cleaning", DurationMinutes = 45, Price = 500, IsActive = true },
             new Service { Id = 3, Name = "Follow-up", DurationMinutes = 15, Price = 0, IsActive = true }
         );
+
+        modelBuilder.Entity<TimeSlot>()
+    .HasIndex(t => new { t.ServiceId, t.StartUtc })
+    .IsUnique();
          // TimeSlot seed for 2026-02-10 in Copenhagen time.
         // Feb in Denmark is CET (UTC+1), so 09:00 local = 08:00Z.
         modelBuilder.Entity<TimeSlot>().HasData(

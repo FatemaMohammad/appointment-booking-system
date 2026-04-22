@@ -11,13 +11,14 @@ namespace BookingSystem.Api.Controllers;
 [Route("api/admin/slots")]
 public class AdminSlotsController : ControllerBase
 {
-    private readonly AppDbContext _db;
-    private readonly SlotGenerator _generator = new();
+   private readonly AppDbContext _db;
+private readonly SlotGenerator _generator;
 
-    public AdminSlotsController(AppDbContext db)
-    {
-        _db = db;
-    }
+public AdminSlotsController(AppDbContext db, SlotGenerator generator)
+{
+    _db = db;
+    _generator = generator;
+}
 
     // POST /api/admin/slots/generate?serviceId=1&from=2026-02-10&to=2026-02-14
     [HttpPost("generate")]
