@@ -9,12 +9,23 @@ type Service = {
   isActive: boolean;
 };
 
+type TimeSlot = {
+  id: number;
+  startUtc: string;
+  endUtc: string;
+  status: string;
+};
+
 export default function App() {
   const [email, setEmail] = useState("hello111@gmail.com");
   const [password, setPassword] = useState("hello111");
   const [message, setMessage] = useState("");
   const [token, setToken] = useState(localStorage.getItem("token") || "");
+
   const [services, setServices] = useState<Service[]>([]);
+  const [selectedServiceId, setSelectedServiceId] = useState<number | "">("");
+  const [selectedDate, setSelectedDate] = useState("");
+  const [slots, setSlots] = useState<TimeSlot[]>([]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -40,6 +51,9 @@ export default function App() {
     localStorage.removeItem("token");
     setToken("");
     setServices([]);
+    setSlots([]);
+    setSelectedServiceId("");
+    setSelectedDate("");
     setMessage("Logged out");
   }
 
@@ -58,8 +72,25 @@ export default function App() {
     }
   }, [token]);
 
+  async function handleLoadAvailability() {
+    if (!selectedServiceId || !selectedDate) {
+      setMessage("Choose a service and a date first.");
+      return;
+    }
+
+    try {
+      setMessage("");
+      const data = await apiFetch<TimeSlot[]>(
+        `/api/availability?serviceId=${selectedServiceId}&date=${selectedDate}`
+      );
+      setSlots(data);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to load availability");
+    }
+  }
+
   return (
-    <div style={{ maxWidth: 700, margin: "40px auto", fontFamily: "Arial" }}>
+    <div style={{ maxWidth: 800, margin: "40px auto", fontFamily: "Arial" }}>
       <h1>Appointment Booking System</h1>
 
       {!token ? (
@@ -98,10 +129,40 @@ export default function App() {
           {services.length === 0 ? (
             <p>No services found.</p>
           ) : (
+            <div>
+              <select
+                value={selectedServiceId}
+                onChange={(e) => setSelectedServiceId(Number(e.target.value))}
+                style={{ padding: 8, marginRight: 12 }}
+              >
+                <option value="">Choose service</option>
+                {services.map((service) => (
+                  <option key={service.id} value={service.id}>
+                    {service.name} ({service.durationMinutes} min)
+                  </option>
+                ))}
+              </select>
+
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                style={{ padding: 8, marginRight: 12 }}
+              />
+
+              <button onClick={handleLoadAvailability}>Load availability</button>
+            </div>
+          )}
+
+          <h2 style={{ marginTop: 30 }}>Available Slots</h2>
+
+          {slots.length === 0 ? (
+            <p>No slots loaded yet.</p>
+          ) : (
             <ul>
-              {services.map((service) => (
-                <li key={service.id} style={{ marginBottom: 10 }}>
-                  <strong>{service.name}</strong> - {service.durationMinutes} min - {service.price} DKK
+              {slots.map((slot) => (
+                <li key={slot.id} style={{ marginBottom: 10 }}>
+                  <strong>Slot #{slot.id}</strong> - {slot.startUtc} → {slot.endUtc} - {slot.status}
                 </li>
               ))}
             </ul>
