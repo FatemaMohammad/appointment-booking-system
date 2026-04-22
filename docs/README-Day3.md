@@ -164,26 +164,3 @@ Project demonstrates:
 * Role-based authorization
 * Booking logic
 
-```
-
----
-
-## Sådan gemmer du den
-
-1. Opret fil i din root:
-```
-
-README.md
-
-```
-
-2. Paste teksten
-3. Gem
-4. Push til GitHub
-
----
-
-Hvis du vil, kan jeg bagefter:
-- gøre den **mere professionel til job/interview**
-- eller hjælpe dig med **GitHub upload step-by-step** 🚀
-```

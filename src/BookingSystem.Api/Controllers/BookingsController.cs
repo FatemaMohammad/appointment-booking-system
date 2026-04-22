@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
 namespace BookingSystem.Api.Controllers;
+
 [Authorize]
 [ApiController]
 [Route("api/[controller]")]
@@ -24,28 +25,23 @@ public class BookingsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateBookingRequest req)
     {
-        // Mock user (senere fra JWT)
-       var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
+        var service = await _db.Services
+            .FirstOrDefaultAsync(s => s.Id == req.ServiceId && s.IsActive);
 
-        // Validate service exists
-        var service = await _db.Services.FirstOrDefaultAsync(s => s.Id == req.ServiceId && s.IsActive);
         if (service is null)
-            return NotFound($"Service {req.ServiceId} not found (or inactive).");
+            return NotFound($"Service {req.ServiceId} not found or inactive.");
 
-        // Validate slot exists and matches service
-        var slot = await _db.TimeSlots.FirstOrDefaultAsync(t =>
-            t.Id == req.TimeSlotId &&
-            t.ServiceId == req.ServiceId);
+        var slot = await _db.TimeSlots
+            .FirstOrDefaultAsync(t => t.Id == req.TimeSlotId && t.ServiceId == req.ServiceId);
 
         if (slot is null)
             return NotFound("TimeSlot not found for that service.");
 
-        // Business rule: cannot book in the past
         if (slot.StartUtc <= DateTime.UtcNow)
             return BadRequest("Cannot book a slot in the past.");
 
-        // Slot must be available (not blocked)
         if (slot.Status != TimeSlotStatus.Available)
             return BadRequest("This slot is not available.");
 
@@ -66,11 +62,18 @@ public class BookingsController : ControllerBase
         }
         catch (DbUpdateException)
         {
-            // Unique constraint violation => someone already booked it
             return Conflict("This slot has already been booked.");
         }
 
-        return CreatedAtAction(nameof(GetMyBookings), new { }, booking);
+        return CreatedAtAction(nameof(GetMyBookings), new { }, new
+        {
+            booking.Id,
+            booking.UserId,
+            booking.ServiceId,
+            booking.TimeSlotId,
+            Status = booking.Status.ToString(),
+            booking.CreatedAtUtc
+        });
     }
 
     // GET /api/bookings/me
@@ -79,19 +82,24 @@ public class BookingsController : ControllerBase
     {
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-
         var bookings = await _db.Bookings
             .Where(b => b.UserId == userId)
+            .Join(
+                _db.TimeSlots,
+                booking => booking.TimeSlotId,
+                slot => slot.Id,
+                (booking, slot) => new
+                {
+                    booking.Id,
+                    booking.ServiceId,
+                    booking.TimeSlotId,
+                    StartUtc = slot.StartUtc,
+                    EndUtc = slot.EndUtc,
+                    Status = booking.Status.ToString(),
+                    booking.CreatedAtUtc,
+                    booking.CancelledAtUtc
+                })
             .OrderByDescending(b => b.CreatedAtUtc)
-            .Select(b => new
-            {
-                b.Id,
-                b.ServiceId,
-                b.TimeSlotId,
-                Status = b.Status.ToString(),
-                b.CreatedAtUtc,
-                b.CancelledAtUtc
-            })
             .ToListAsync();
 
         return Ok(bookings);
@@ -103,25 +111,39 @@ public class BookingsController : ControllerBase
     {
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
+        var booking = await _db.Bookings
+            .FirstOrDefaultAsync(b => b.Id == id && b.UserId == userId);
 
-        var booking = await _db.Bookings.FirstOrDefaultAsync(b => b.Id == id && b.UserId == userId);
         if (booking is null)
-            return NotFound();
+            return NotFound("Booking not found.");
 
         if (booking.Status == BookingStatus.Cancelled)
-            return BadRequest("Booking already cancelled.");
+            return BadRequest("Booking is already cancelled.");
 
-        var slot = await _db.TimeSlots.FirstAsync(t => t.Id == booking.TimeSlotId);
+        var slot = await _db.TimeSlots
+            .FirstOrDefaultAsync(t => t.Id == booking.TimeSlotId);
 
-        // Business rule: cancel >= 24 hours before
+        if (slot is null)
+            return NotFound("Associated time slot not found.");
+
         var minNoticeHours = 24;
         if (slot.StartUtc <= DateTime.UtcNow.AddHours(minNoticeHours))
-            return BadRequest($"Cancellation must happen at least {minNoticeHours} hours before.");
+            return BadRequest($"Cancellation must happen at least {minNoticeHours} hours before the appointment.");
 
         booking.Status = BookingStatus.Cancelled;
         booking.CancelledAtUtc = DateTime.UtcNow;
 
+        // Make slot available again after cancellation
+        slot.Status = TimeSlotStatus.Available;
+
         await _db.SaveChangesAsync();
-        return Ok();
+
+        return Ok(new
+        {
+            message = "Booking cancelled successfully.",
+            bookingId = booking.Id,
+            slotId = slot.Id,
+            slotStatus = slot.Status.ToString()
+        });
     }
 }
