@@ -44,6 +44,11 @@ public class BookingsController : ControllerBase
 
         if (slot.Status != TimeSlotStatus.Available)
             return BadRequest("This slot is not available.");
+        var existingActiveBooking = await _db.Bookings
+        .AnyAsync(b => b.TimeSlotId == req.TimeSlotId && b.Status == BookingStatus.Active);
+
+        if (existingActiveBooking)
+        return Conflict("This slot has already been booked.");
 
         var booking = new Booking
         {
