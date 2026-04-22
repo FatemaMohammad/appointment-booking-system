@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "./api";
 
 type Service = {
@@ -16,6 +16,17 @@ type TimeSlot = {
   status: string;
 };
 
+type Booking = {
+  id: number;
+  serviceId: number;
+  timeSlotId: number;
+  startUtc: string;
+  endUtc: string;
+  status: string;
+  createdAtUtc: string;
+  cancelledAtUtc: string | null;
+};
+
 export default function App() {
   const [email, setEmail] = useState("hello111@gmail.com");
   const [password, setPassword] = useState("hello111");
@@ -26,6 +37,12 @@ export default function App() {
   const [selectedServiceId, setSelectedServiceId] = useState<number | "">("");
   const [selectedDate, setSelectedDate] = useState("");
   const [slots, setSlots] = useState<TimeSlot[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [loadingBookings, setLoadingBookings] = useState(false);
+  const [bookingSlotId, setBookingSlotId] = useState<number | null>(null);
+  const [cancellingBookingId, setCancellingBookingId] = useState<number | null>(null);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -34,16 +51,14 @@ export default function App() {
     try {
       const data = await apiFetch<{ token: string }>(
         `/api/auth/login?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`,
-        {
-          method: "POST",
-        }
+        { method: "POST" }
       );
 
       localStorage.setItem("token", data.token);
       setToken(data.token);
-      setMessage("Login successful");
+      setMessage("Login successful.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Login failed");
+      setMessage(error instanceof Error ? error.message : "Login failed.");
     }
   }
 
@@ -52,23 +67,29 @@ export default function App() {
     setToken("");
     setServices([]);
     setSlots([]);
+    setBookings([]);
     setSelectedServiceId("");
     setSelectedDate("");
-    setMessage("Logged out");
+    setMessage("Logged out.");
   }
 
   useEffect(() => {
-    async function loadServices() {
+    async function loadInitialData() {
       try {
-        const data = await apiFetch<Service[]>("/api/services");
-        setServices(data);
+        const [servicesData, bookingsData] = await Promise.all([
+          apiFetch<Service[]>("/api/services"),
+          apiFetch<Booking[]>("/api/bookings/me"),
+        ]);
+
+        setServices(servicesData);
+        setBookings(bookingsData);
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Failed to load services");
+        setMessage(error instanceof Error ? error.message : "Failed to load data.");
       }
     }
 
     if (token) {
-      loadServices();
+      loadInitialData();
     }
   }, [token]);
 
@@ -79,98 +100,544 @@ export default function App() {
     }
 
     try {
+      setLoadingSlots(true);
       setMessage("");
       const data = await apiFetch<TimeSlot[]>(
         `/api/availability?serviceId=${selectedServiceId}&date=${selectedDate}`
       );
       setSlots(data);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to load availability");
+      setMessage(error instanceof Error ? error.message : "Failed to load availability.");
+    } finally {
+      setLoadingSlots(false);
     }
   }
 
+  async function loadBookings() {
+    try {
+      setLoadingBookings(true);
+      const data = await apiFetch<Booking[]>("/api/bookings/me");
+      setBookings(data);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to load bookings.");
+    } finally {
+      setLoadingBookings(false);
+    }
+  }
+
+  async function book(timeSlotId: number) {
+    if (!selectedServiceId) {
+      setMessage("Choose a service first.");
+      return;
+    }
+
+    try {
+      setBookingSlotId(timeSlotId);
+      setMessage("");
+
+      const token = localStorage.getItem("token");
+
+      const res = await fetch("http://localhost:5000/api/Bookings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          serviceId: selectedServiceId,
+          timeSlotId,
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Booking failed.");
+      }
+
+      setMessage("Booking created successfully.");
+      await handleLoadAvailability();
+      await loadBookings();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Booking failed.");
+    } finally {
+      setBookingSlotId(null);
+    }
+  }
+
+  async function cancelBooking(bookingId: number) {
+    try {
+      setCancellingBookingId(bookingId);
+      setMessage("");
+
+      const token = localStorage.getItem("token");
+
+      const res = await fetch(`http://localhost:5000/api/Bookings/${bookingId}/cancel`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Cancel failed.");
+      }
+
+      setMessage("Booking cancelled successfully.");
+      await loadBookings();
+
+      if (selectedServiceId && selectedDate) {
+        await handleLoadAvailability();
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Cancel failed.");
+    } finally {
+      setCancellingBookingId(null);
+    }
+  }
+
+  const serviceMap = useMemo(() => {
+    return new Map(services.map((service) => [service.id, service]));
+  }, [services]);
+
+  function formatDateTime(value: string) {
+    return new Date(value).toLocaleString();
+  }
+
+  function getStatusBadgeStyle(status: string): React.CSSProperties {
+    const normalized = status.toLowerCase();
+
+    if (normalized === "available" || normalized === "0") {
+      return {
+        background: "#dcfce7",
+        color: "#166534",
+      };
+    }
+
+    if (normalized === "blocked" || normalized === "2") {
+      return {
+        background: "#fee2e2",
+        color: "#991b1b",
+      };
+    }
+
+    if (normalized === "active") {
+      return {
+        background: "#dbeafe",
+        color: "#1d4ed8",
+      };
+    }
+
+    if (normalized === "cancelled") {
+      return {
+        background: "#e5e7eb",
+        color: "#374151",
+      };
+    }
+
+    return {
+      background: "#f3f4f6",
+      color: "#374151",
+    };
+  }
+
+  const styles = {
+    page: {
+      minHeight: "100vh",
+      background: "linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%)",
+      fontFamily: "Inter, Arial, sans-serif",
+      color: "#111827",
+      paddingBottom: 40,
+    } as React.CSSProperties,
+    nav: {
+      maxWidth: 1150,
+      margin: "0 auto",
+      padding: "24px 20px 12px",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+    } as React.CSSProperties,
+    brand: {
+      fontSize: 22,
+      fontWeight: 800,
+      letterSpacing: "-0.4px",
+    } as React.CSSProperties,
+    navRight: {
+      color: "#6b7280",
+      fontSize: 14,
+    } as React.CSSProperties,
+    container: {
+      maxWidth: 1150,
+      margin: "0 auto",
+      padding: "0 20px",
+    } as React.CSSProperties,
+    hero: {
+      textAlign: "center" as const,
+      padding: "24px 0 28px",
+    } as React.CSSProperties,
+    title: {
+      fontSize: "56px",
+      lineHeight: 1.05,
+      fontWeight: 800,
+      margin: 0,
+      letterSpacing: "-1.5px",
+    } as React.CSSProperties,
+    subtitle: {
+      marginTop: 16,
+      color: "#6b7280",
+      fontSize: 18,
+    } as React.CSSProperties,
+    loginCard: {
+      maxWidth: 480,
+      margin: "0 auto",
+      background: "#ffffff",
+      borderRadius: 24,
+      padding: 28,
+      boxShadow: "0 20px 60px rgba(15, 23, 42, 0.08)",
+      border: "1px solid rgba(226,232,240,0.8)",
+    } as React.CSSProperties,
+    dashboardHeader: {
+      background: "#ffffff",
+      borderRadius: 24,
+      padding: 24,
+      boxShadow: "0 20px 60px rgba(15, 23, 42, 0.08)",
+      border: "1px solid rgba(226,232,240,0.8)",
+      marginBottom: 20,
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      flexWrap: "wrap" as const,
+      gap: 12,
+    } as React.CSSProperties,
+    dashboardTitle: {
+      fontSize: 26,
+      fontWeight: 800,
+      margin: 0,
+    } as React.CSSProperties,
+    dashboardSub: {
+      marginTop: 6,
+      color: "#6b7280",
+    } as React.CSSProperties,
+    grid: {
+      display: "grid",
+      gridTemplateColumns: "1.05fr 0.95fr",
+      gap: 20,
+    } as React.CSSProperties,
+    column: {
+      display: "flex",
+      flexDirection: "column" as const,
+      gap: 20,
+    } as React.CSSProperties,
+    card: {
+      background: "#ffffff",
+      borderRadius: 24,
+      padding: 24,
+      boxShadow: "0 20px 60px rgba(15, 23, 42, 0.08)",
+      border: "1px solid rgba(226,232,240,0.8)",
+    } as React.CSSProperties,
+    cardTitle: {
+      fontSize: 24,
+      fontWeight: 800,
+      margin: "0 0 18px 0",
+    } as React.CSSProperties,
+    label: {
+      display: "block",
+      marginBottom: 8,
+      fontWeight: 600,
+      color: "#374151",
+    } as React.CSSProperties,
+    input: {
+      width: "100%",
+      padding: "14px 16px",
+      borderRadius: 14,
+      border: "1px solid #d1d5db",
+      fontSize: 16,
+      outline: "none",
+      boxSizing: "border-box" as const,
+      background: "#fff",
+    } as React.CSSProperties,
+    row: {
+      display: "flex",
+      gap: 12,
+      flexWrap: "wrap" as const,
+      alignItems: "center",
+    } as React.CSSProperties,
+    select: {
+      padding: "14px 16px",
+      borderRadius: 14,
+      border: "1px solid #d1d5db",
+      fontSize: 16,
+      minWidth: 250,
+      background: "#fff",
+    } as React.CSSProperties,
+    primaryButton: {
+      padding: "14px 18px",
+      borderRadius: 14,
+      border: "none",
+      background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+      color: "#fff",
+      fontWeight: 700,
+      fontSize: 14,
+      cursor: "pointer",
+      boxShadow: "0 10px 24px rgba(37, 99, 235, 0.22)",
+    } as React.CSSProperties,
+    secondaryButton: {
+      padding: "12px 16px",
+      borderRadius: 14,
+      border: "1px solid #d1d5db",
+      background: "#fff",
+      color: "#111827",
+      fontWeight: 700,
+      fontSize: 14,
+      cursor: "pointer",
+    } as React.CSSProperties,
+    message: {
+      marginTop: 14,
+      padding: "14px 16px",
+      borderRadius: 14,
+      background: "#eef2ff",
+      color: "#3730a3",
+      fontWeight: 600,
+      border: "1px solid #c7d2fe",
+    } as React.CSSProperties,
+    empty: {
+      color: "#6b7280",
+      margin: 0,
+    } as React.CSSProperties,
+    items: {
+      display: "grid",
+      gap: 14,
+    } as React.CSSProperties,
+    itemCard: {
+      background: "#f8fafc",
+      border: "1px solid #e5e7eb",
+      borderRadius: 18,
+      padding: 18,
+    } as React.CSSProperties,
+    itemTitle: {
+      fontWeight: 800,
+      marginBottom: 10,
+      fontSize: 17,
+    } as React.CSSProperties,
+    badge: {
+      display: "inline-block",
+      padding: "6px 12px",
+      borderRadius: 999,
+      fontSize: 12,
+      fontWeight: 800,
+      marginTop: 12,
+    } as React.CSSProperties,
+    fieldLine: {
+      marginBottom: 6,
+      color: "#374151",
+    } as React.CSSProperties,
+  };
+
   return (
-    <div style={{ maxWidth: 800, margin: "40px auto", fontFamily: "Arial" }}>
-      <h1>Appointment Booking System</h1>
+    <div style={styles.page}>
+      <div style={styles.nav}>
+        <div style={styles.brand}>Appointment Booking</div>
+        <div style={styles.navRight}>{token ? "Authenticated session" : "Please sign in"}</div>
+      </div>
 
-      {!token ? (
-        <form onSubmit={handleLogin}>
-          <div style={{ marginBottom: 12 }}>
-            <label>Email</label>
-            <br />
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={{ width: "100%", padding: 8 }}
-            />
-          </div>
-
-          <div style={{ marginBottom: 12 }}>
-            <label>Password</label>
-            <br />
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              style={{ width: "100%", padding: 8 }}
-            />
-          </div>
-
-          <button type="submit">Login</button>
-        </form>
-      ) : (
-        <div>
-          <p>You are logged in.</p>
-          <button onClick={handleLogout}>Logout</button>
-
-          <h2 style={{ marginTop: 30 }}>Services</h2>
-
-          {services.length === 0 ? (
-            <p>No services found.</p>
-          ) : (
-            <div>
-              <select
-                value={selectedServiceId}
-                onChange={(e) => setSelectedServiceId(Number(e.target.value))}
-                style={{ padding: 8, marginRight: 12 }}
-              >
-                <option value="">Choose service</option>
-                {services.map((service) => (
-                  <option key={service.id} value={service.id}>
-                    {service.name} ({service.durationMinutes} min)
-                  </option>
-                ))}
-              </select>
-
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                style={{ padding: 8, marginRight: 12 }}
-              />
-
-              <button onClick={handleLoadAvailability}>Load availability</button>
-            </div>
-          )}
-
-          <h2 style={{ marginTop: 30 }}>Available Slots</h2>
-
-          {slots.length === 0 ? (
-            <p>No slots loaded yet.</p>
-          ) : (
-            <ul>
-              {slots.map((slot) => (
-                <li key={slot.id} style={{ marginBottom: 10 }}>
-                  <strong>Slot #{slot.id}</strong> - {slot.startUtc} → {slot.endUtc} - {slot.status}
-                </li>
-              ))}
-            </ul>
-          )}
+      <div style={styles.container}>
+        <div style={styles.hero}>
+          <h1 style={styles.title}>Appointment Booking System</h1>
+          <p style={styles.subtitle}>Manage services, find free slots, create bookings, and cancel them easily.</p>
         </div>
-      )}
 
-      {message && <p style={{ marginTop: 20 }}>{message}</p>}
+        {!token ? (
+          <div style={styles.loginCard}>
+            <h2 style={styles.cardTitle}>Login</h2>
+
+            <form onSubmit={handleLogin}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={styles.label}>Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  style={styles.input}
+                />
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <label style={styles.label}>Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  style={styles.input}
+                />
+              </div>
+
+              <button type="submit" style={styles.primaryButton}>
+                Login
+              </button>
+            </form>
+
+            {message && <div style={styles.message}>{message}</div>}
+          </div>
+        ) : (
+          <>
+            <div style={styles.dashboardHeader}>
+              <div>
+                <h2 style={styles.dashboardTitle}>Dashboard</h2>
+                <div style={styles.dashboardSub}>You are logged in and ready to manage bookings.</div>
+              </div>
+
+              <button onClick={handleLogout} style={styles.secondaryButton}>
+                Logout
+              </button>
+            </div>
+
+            {message && <div style={{ ...styles.card, padding: 0, background: "transparent", boxShadow: "none", border: "none" }}>
+              <div style={styles.message}>{message}</div>
+            </div>}
+
+            <div style={styles.grid}>
+              <div style={styles.column}>
+                <div style={styles.card}>
+                  <h2 style={styles.cardTitle}>Find Available Slots</h2>
+
+                  <div style={styles.row}>
+                    <select
+                      value={selectedServiceId}
+                      onChange={(e) =>
+                        setSelectedServiceId(e.target.value ? Number(e.target.value) : "")
+                      }
+                      style={styles.select}
+                    >
+                      <option value="">Choose service</option>
+                      {services.map((service) => (
+                        <option key={service.id} value={service.id}>
+                          {service.name} ({service.durationMinutes} min)
+                        </option>
+                      ))}
+                    </select>
+
+                    <input
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                      style={{ ...styles.input, maxWidth: 220 }}
+                    />
+
+                    <button
+                      onClick={handleLoadAvailability}
+                      disabled={loadingSlots}
+                      style={styles.primaryButton}
+                    >
+                      {loadingSlots ? "Loading..." : "Load availability"}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={styles.card}>
+                  <h2 style={styles.cardTitle}>Available Slots</h2>
+
+                  {slots.length === 0 ? (
+                    <p style={styles.empty}>No slots loaded yet.</p>
+                  ) : (
+                    <div style={styles.items}>
+                      {slots.map((slot) => (
+                        <div key={slot.id} style={styles.itemCard}>
+                          <div style={styles.itemTitle}>Slot #{slot.id}</div>
+
+                          <div style={styles.fieldLine}>
+                            <strong>Start:</strong> {formatDateTime(slot.startUtc)}
+                          </div>
+                          <div style={styles.fieldLine}>
+                            <strong>End:</strong> {formatDateTime(slot.endUtc)}
+                          </div>
+
+                          <span style={{ ...styles.badge, ...getStatusBadgeStyle(slot.status) }}>
+                            {slot.status}
+                          </span>
+
+                          <div style={{ marginTop: 14 }}>
+                            <button
+                              onClick={() => book(slot.id)}
+                              disabled={slot.status !== "Available" || bookingSlotId === slot.id}
+                              style={{
+                                ...styles.primaryButton,
+                                opacity:
+                                  slot.status !== "Available" || bookingSlotId === slot.id ? 0.6 : 1,
+                              }}
+                            >
+                              {bookingSlotId === slot.id ? "Booking..." : "Book slot"}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={styles.column}>
+                <div style={styles.card}>
+                  <h2 style={styles.cardTitle}>My Bookings</h2>
+
+                  {loadingBookings ? (
+                    <p style={styles.empty}>Loading bookings...</p>
+                  ) : bookings.length === 0 ? (
+                    <p style={styles.empty}>No bookings yet.</p>
+                  ) : (
+                    <div style={styles.items}>
+                      {bookings.map((booking) => {
+                        const service = serviceMap.get(booking.serviceId);
+
+                        return (
+                          <div key={booking.id} style={styles.itemCard}>
+                            <div style={styles.itemTitle}>Booking #{booking.id}</div>
+
+                            <div style={styles.fieldLine}>
+                              <strong>Service:</strong> {service?.name ?? `Service #${booking.serviceId}`}
+                            </div>
+                            <div style={styles.fieldLine}>
+                              <strong>Start:</strong> {formatDateTime(booking.startUtc)}
+                            </div>
+                            <div style={styles.fieldLine}>
+                              <strong>End:</strong> {formatDateTime(booking.endUtc)}
+                            </div>
+
+                            <span style={{ ...styles.badge, ...getStatusBadgeStyle(booking.status) }}>
+                              {booking.status}
+                            </span>
+
+                            <div style={{ marginTop: 14 }}>
+                              <button
+                                onClick={() => cancelBooking(booking.id)}
+                                disabled={
+                                  booking.status !== "Active" ||
+                                  cancellingBookingId === booking.id
+                                }
+                                style={{
+                                  ...styles.secondaryButton,
+                                  opacity:
+                                    booking.status !== "Active" ||
+                                    cancellingBookingId === booking.id
+                                      ? 0.6
+                                      : 1,
+                                }}
+                              >
+                                {cancellingBookingId === booking.id
+                                  ? "Cancelling..."
+                                  : "Cancel booking"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
