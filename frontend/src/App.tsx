@@ -31,7 +31,7 @@ export default function App() {
   const [email, setEmail] = useState("hello111@gmail.com");
   const [password, setPassword] = useState("hello111");
   const [message, setMessage] = useState("");
-  const [token, setToken] = useState(localStorage.getItem("token") || "");
+  const [token, setToken] = useState("");
 
   const [services, setServices] = useState<Service[]>([]);
   const [selectedServiceId, setSelectedServiceId] = useState<number | "">("");
@@ -41,6 +41,7 @@ export default function App() {
 
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [loadingBookings, setLoadingBookings] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
   const [bookingSlotId, setBookingSlotId] = useState<number | null>(null);
   const [cancellingBookingId, setCancellingBookingId] = useState<number | null>(null);
 
@@ -49,21 +50,24 @@ export default function App() {
     setMessage("");
 
     try {
+      setLoggingIn(true);
+
       const data = await apiFetch<{ token: string }>(
         `/api/auth/login?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`,
+        "",
         { method: "POST" }
       );
 
-      localStorage.setItem("token", data.token);
       setToken(data.token);
-      setMessage("Login successful.");
+      setMessage("✅ Login successful.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Login failed.");
+      setMessage(error instanceof Error ? `❌ ${error.message}` : "❌ Login failed.");
+    } finally {
+      setLoggingIn(false);
     }
   }
 
   function handleLogout() {
-    localStorage.removeItem("token");
     setToken("");
     setServices([]);
     setSlots([]);
@@ -73,24 +77,32 @@ export default function App() {
     setMessage("Logged out.");
   }
 
+  async function loadServices() {
+    try {
+      const servicesData = await apiFetch<Service[]>("/api/services", token);
+      setServices(servicesData);
+    } catch (error) {
+      setMessage(error instanceof Error ? `❌ ${error.message}` : "❌ Failed to load services.");
+    }
+  }
+
+  async function loadBookings() {
+    try {
+      setLoadingBookings(true);
+      const bookingsData = await apiFetch<Booking[]>("/api/bookings/me", token);
+      setBookings(bookingsData);
+    } catch (error) {
+      setMessage(error instanceof Error ? `❌ ${error.message}` : "❌ Failed to load bookings.");
+    } finally {
+      setLoadingBookings(false);
+    }
+  }
+
   useEffect(() => {
-    async function loadInitialData() {
-      try {
-        const [servicesData, bookingsData] = await Promise.all([
-          apiFetch<Service[]>("/api/services"),
-          apiFetch<Booking[]>("/api/bookings/me"),
-        ]);
+    if (!token) return;
 
-        setServices(servicesData);
-        setBookings(bookingsData);
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Failed to load data.");
-      }
-    }
-
-    if (token) {
-      loadInitialData();
-    }
+    loadServices();
+    loadBookings();
   }, [token]);
 
   async function handleLoadAvailability() {
@@ -102,26 +114,19 @@ export default function App() {
     try {
       setLoadingSlots(true);
       setMessage("");
+
       const data = await apiFetch<TimeSlot[]>(
-        `/api/availability?serviceId=${selectedServiceId}&date=${selectedDate}`
+        `/api/availability?serviceId=${selectedServiceId}&date=${selectedDate}`,
+        token
       );
+
       setSlots(data);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to load availability.");
+      setMessage(
+        error instanceof Error ? `❌ ${error.message}` : "❌ Failed to load availability."
+      );
     } finally {
       setLoadingSlots(false);
-    }
-  }
-
-  async function loadBookings() {
-    try {
-      setLoadingBookings(true);
-      const data = await apiFetch<Booking[]>("/api/bookings/me");
-      setBookings(data);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to load bookings.");
-    } finally {
-      setLoadingBookings(false);
     }
   }
 
@@ -134,8 +139,6 @@ export default function App() {
     try {
       setBookingSlotId(timeSlotId);
       setMessage("");
-
-      const token = localStorage.getItem("token");
 
       const res = await fetch("http://localhost:5000/api/Bookings", {
         method: "POST",
@@ -154,11 +157,11 @@ export default function App() {
         throw new Error(text || "Booking failed.");
       }
 
-      setMessage("Booking created successfully.");
+      setMessage("✅ Booking created successfully.");
       await handleLoadAvailability();
       await loadBookings();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Booking failed.");
+      setMessage(error instanceof Error ? `❌ ${error.message}` : "❌ Booking failed.");
     } finally {
       setBookingSlotId(null);
     }
@@ -168,8 +171,6 @@ export default function App() {
     try {
       setCancellingBookingId(bookingId);
       setMessage("");
-
-      const token = localStorage.getItem("token");
 
       const res = await fetch(`http://localhost:5000/api/Bookings/${bookingId}/cancel`, {
         method: "POST",
@@ -183,14 +184,14 @@ export default function App() {
         throw new Error(text || "Cancel failed.");
       }
 
-      setMessage("Booking cancelled successfully.");
+      setMessage("✅ Booking cancelled successfully.");
       await loadBookings();
 
       if (selectedServiceId && selectedDate) {
         await handleLoadAvailability();
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Cancel failed.");
+      setMessage(error instanceof Error ? `❌ ${error.message}` : "❌ Cancel failed.");
     } finally {
       setCancellingBookingId(null);
     }
@@ -200,35 +201,64 @@ export default function App() {
     return new Map(services.map((service) => [service.id, service]));
   }, [services]);
 
+  const sortedBookings = useMemo(() => {
+    return [...bookings].sort(
+      (a, b) => new Date(a.startUtc).getTime() - new Date(b.startUtc).getTime()
+    );
+  }, [bookings]);
+
   function formatDateTime(value: string) {
-    return new Date(value).toLocaleString();
+    return new Date(value).toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  }
+
+  function isAvailableStatus(status: string) {
+    const normalized = status.toLowerCase();
+    return normalized === "available" || normalized === "0";
+  }
+
+  function isBlockedStatus(status: string) {
+    const normalized = status.toLowerCase();
+    return normalized === "blocked" || normalized === "2";
+  }
+
+  function isActiveStatus(status: string) {
+    return status.toLowerCase() === "active";
+  }
+
+  function isCancelledStatus(status: string) {
+    return status.toLowerCase() === "cancelled";
+  }
+
+  function isPastDate(dateValue: string) {
+    return new Date(dateValue).getTime() <= Date.now();
   }
 
   function getStatusBadgeStyle(status: string): React.CSSProperties {
-    const normalized = status.toLowerCase();
-
-    if (normalized === "available" || normalized === "0") {
+    if (isAvailableStatus(status)) {
       return {
         background: "#dcfce7",
         color: "#166534",
       };
     }
 
-    if (normalized === "blocked" || normalized === "2") {
+    if (isBlockedStatus(status)) {
       return {
         background: "#fee2e2",
         color: "#991b1b",
       };
     }
 
-    if (normalized === "active") {
+    if (isActiveStatus(status)) {
       return {
         background: "#dbeafe",
         color: "#1d4ed8",
       };
     }
 
-    if (normalized === "cancelled") {
+    if (isCancelledStatus(status)) {
       return {
         background: "#e5e7eb",
         color: "#374151",
@@ -239,6 +269,14 @@ export default function App() {
       background: "#f3f4f6",
       color: "#374151",
     };
+  }
+
+  function getStatusLabel(status: string) {
+    if (isAvailableStatus(status)) return "Available";
+    if (isBlockedStatus(status)) return "Blocked";
+    if (isActiveStatus(status)) return "Active";
+    if (isCancelledStatus(status)) return "Cancelled";
+    return status;
   }
 
   const styles = {
@@ -431,6 +469,11 @@ export default function App() {
       marginBottom: 6,
       color: "#374151",
     } as React.CSSProperties,
+    mutedText: {
+      color: "#6b7280",
+      fontSize: 14,
+      marginTop: 8,
+    } as React.CSSProperties,
   };
 
   return (
@@ -443,7 +486,9 @@ export default function App() {
       <div style={styles.container}>
         <div style={styles.hero}>
           <h1 style={styles.title}>Appointment Booking System</h1>
-          <p style={styles.subtitle}>Manage services, find free slots, create bookings, and cancel them easily.</p>
+          <p style={styles.subtitle}>
+            Manage services, find free slots, create bookings, and cancel them easily.
+          </p>
         </div>
 
         {!token ? (
@@ -471,8 +516,12 @@ export default function App() {
                 />
               </div>
 
-              <button type="submit" style={styles.primaryButton}>
-                Login
+              <button
+                type="submit"
+                style={{ ...styles.primaryButton, opacity: loggingIn ? 0.7 : 1 }}
+                disabled={loggingIn}
+              >
+                {loggingIn ? "Logging in..." : "Login"}
               </button>
             </form>
 
@@ -483,7 +532,9 @@ export default function App() {
             <div style={styles.dashboardHeader}>
               <div>
                 <h2 style={styles.dashboardTitle}>Dashboard</h2>
-                <div style={styles.dashboardSub}>You are logged in and ready to manage bookings.</div>
+                <div style={styles.dashboardSub}>
+                  You are logged in and ready to manage bookings.
+                </div>
               </div>
 
               <button onClick={handleLogout} style={styles.secondaryButton}>
@@ -491,9 +542,19 @@ export default function App() {
               </button>
             </div>
 
-            {message && <div style={{ ...styles.card, padding: 0, background: "transparent", boxShadow: "none", border: "none" }}>
-              <div style={styles.message}>{message}</div>
-            </div>}
+            {message && (
+              <div
+                style={{
+                  ...styles.card,
+                  padding: 0,
+                  background: "transparent",
+                  boxShadow: "none",
+                  border: "none",
+                }}
+              >
+                <div style={styles.message}>{message}</div>
+              </div>
+            )}
 
             <div style={styles.grid}>
               <div style={styles.column}>
@@ -511,7 +572,7 @@ export default function App() {
                       <option value="">Choose service</option>
                       {services.map((service) => (
                         <option key={service.id} value={service.id}>
-                          {service.name} ({service.durationMinutes} min)
+                          {service.name} ({service.durationMinutes} min) - {service.price} DKK
                         </option>
                       ))}
                     </select>
@@ -526,7 +587,7 @@ export default function App() {
                     <button
                       onClick={handleLoadAvailability}
                       disabled={loadingSlots}
-                      style={styles.primaryButton}
+                      style={{ ...styles.primaryButton, opacity: loadingSlots ? 0.7 : 1 }}
                     >
                       {loadingSlots ? "Loading..." : "Load availability"}
                     </button>
@@ -540,36 +601,51 @@ export default function App() {
                     <p style={styles.empty}>No slots loaded yet.</p>
                   ) : (
                     <div style={styles.items}>
-                      {slots.map((slot) => (
-                        <div key={slot.id} style={styles.itemCard}>
-                          <div style={styles.itemTitle}>Slot #{slot.id}</div>
+                      {slots.map((slot) => {
+                        const isAvailable = isAvailableStatus(slot.status);
+                        const isPast = isPastDate(slot.startUtc);
 
-                          <div style={styles.fieldLine}>
-                            <strong>Start:</strong> {formatDateTime(slot.startUtc)}
-                          </div>
-                          <div style={styles.fieldLine}>
-                            <strong>End:</strong> {formatDateTime(slot.endUtc)}
-                          </div>
+                        return (
+                          <div key={slot.id} style={styles.itemCard}>
+                            <div style={styles.itemTitle}>Slot #{slot.id}</div>
 
-                          <span style={{ ...styles.badge, ...getStatusBadgeStyle(slot.status) }}>
-                            {slot.status}
-                          </span>
+                            <div style={styles.fieldLine}>
+                              <strong>Start:</strong> {formatDateTime(slot.startUtc)}
+                            </div>
+                            <div style={styles.fieldLine}>
+                              <strong>End:</strong> {formatDateTime(slot.endUtc)}
+                            </div>
 
-                          <div style={{ marginTop: 14 }}>
-                            <button
-                              onClick={() => book(slot.id)}
-                              disabled={slot.status !== "Available" || bookingSlotId === slot.id}
-                              style={{
-                                ...styles.primaryButton,
-                                opacity:
-                                  slot.status !== "Available" || bookingSlotId === slot.id ? 0.6 : 1,
-                              }}
-                            >
-                              {bookingSlotId === slot.id ? "Booking..." : "Book slot"}
-                            </button>
+                            <span style={{ ...styles.badge, ...getStatusBadgeStyle(slot.status) }}>
+                              {isPast && isAvailable ? "Past" : getStatusLabel(slot.status)}
+                            </span>
+
+                            {isPast && (
+                              <div style={styles.mutedText}>
+                                This slot is in the past and cannot be booked.
+                              </div>
+                            )}
+
+                            <div style={{ marginTop: 14 }}>
+                              <button
+                                onClick={() => book(slot.id)}
+                                disabled={!isAvailable || isPast || bookingSlotId === slot.id}
+                                style={{
+                                  ...styles.primaryButton,
+                                  opacity:
+                                    !isAvailable || isPast || bookingSlotId === slot.id ? 0.6 : 1,
+                                }}
+                              >
+                                {bookingSlotId === slot.id
+                                  ? "Booking..."
+                                  : isPast
+                                  ? "Past slot"
+                                  : "Book slot"}
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -581,19 +657,22 @@ export default function App() {
 
                   {loadingBookings ? (
                     <p style={styles.empty}>Loading bookings...</p>
-                  ) : bookings.length === 0 ? (
+                  ) : sortedBookings.length === 0 ? (
                     <p style={styles.empty}>No bookings yet.</p>
                   ) : (
                     <div style={styles.items}>
-                      {bookings.map((booking) => {
+                      {sortedBookings.map((booking) => {
                         const service = serviceMap.get(booking.serviceId);
+                        const isPast = isPastDate(booking.startUtc);
+                        const canCancel = isActiveStatus(booking.status) && !isPast;
 
                         return (
                           <div key={booking.id} style={styles.itemCard}>
                             <div style={styles.itemTitle}>Booking #{booking.id}</div>
 
                             <div style={styles.fieldLine}>
-                              <strong>Service:</strong> {service?.name ?? `Service #${booking.serviceId}`}
+                              <strong>Service:</strong>{" "}
+                              {service?.name ?? `Service #${booking.serviceId}`}
                             </div>
                             <div style={styles.fieldLine}>
                               <strong>Start:</strong> {formatDateTime(booking.startUtc)}
@@ -602,24 +681,26 @@ export default function App() {
                               <strong>End:</strong> {formatDateTime(booking.endUtc)}
                             </div>
 
-                            <span style={{ ...styles.badge, ...getStatusBadgeStyle(booking.status) }}>
-                              {booking.status}
+                            <span
+                              style={{ ...styles.badge, ...getStatusBadgeStyle(booking.status) }}
+                            >
+                              {getStatusLabel(booking.status)}
                             </span>
+
+                            {isPast && isActiveStatus(booking.status) && (
+                              <div style={styles.mutedText}>
+                                Past bookings can no longer be cancelled.
+                              </div>
+                            )}
 
                             <div style={{ marginTop: 14 }}>
                               <button
                                 onClick={() => cancelBooking(booking.id)}
-                                disabled={
-                                  booking.status !== "Active" ||
-                                  cancellingBookingId === booking.id
-                                }
+                                disabled={!canCancel || cancellingBookingId === booking.id}
                                 style={{
                                   ...styles.secondaryButton,
                                   opacity:
-                                    booking.status !== "Active" ||
-                                    cancellingBookingId === booking.id
-                                      ? 0.6
-                                      : 1,
+                                    !canCancel || cancellingBookingId === booking.id ? 0.6 : 1,
                                 }}
                               >
                                 {cancellingBookingId === booking.id
