@@ -12,7 +12,7 @@ The system allows users to:
 
 ---
 
-## 🧱 Architecture
+## Architecture
 
 This project follows a **clean architecture / domain-driven design approach**:
 
@@ -24,7 +24,7 @@ This project follows a **clean architecture / domain-driven design approach**:
 
 ---
 
-## 🔐 Authentication
+## Authentication
 
 * JWT-based authentication
 * Secure API endpoints using `[Authorize]`
@@ -32,9 +32,9 @@ This project follows a **clean architecture / domain-driven design approach**:
 
 ---
 
-## ⚙️ Features
+## Features
 
-### 👤 User Features
+### User Features
 
 * Login
 * View services
@@ -42,7 +42,7 @@ This project follows a **clean architecture / domain-driven design approach**:
 * Book available slots
 * Cancel bookings
 
-### 📅 Booking Logic
+### Booking Logic
 
 * Cannot book a slot in the past
 * Only "Available" slots can be booked
@@ -52,7 +52,7 @@ This project follows a **clean architecture / domain-driven design approach**:
   * Active
   * Cancelled
 
-### 🧠 Business Rules
+### Business Rules
 
 * Time slots are generated based on service duration
 * Slot conflicts are prevented in backend logic
@@ -60,7 +60,7 @@ This project follows a **clean architecture / domain-driven design approach**:
 
 ---
 
-## 🗄️ Database
+## Database
 
 * SQLite database using **Entity Framework Core**
 * Seeded data includes:
@@ -71,7 +71,7 @@ This project follows a **clean architecture / domain-driven design approach**:
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### 1. Run database migration
 
@@ -107,7 +107,7 @@ http://localhost:5173
 
 ---
 
-## 🔌 API Endpoints (examples)
+## API Endpoints (examples)
 
 * `POST /api/auth/login`
 * `GET /api/services`
@@ -118,7 +118,7 @@ http://localhost:5173
 
 ---
 
-## 🖥️ UI Overview
+## UI Overview
 
 The frontend includes:
 
@@ -130,7 +130,7 @@ The frontend includes:
 
 ---
 
-## 🧪 Example Flow
+## Example Flow
 
 1. Login
 2. Select a service
@@ -142,7 +142,7 @@ The frontend includes:
 
 ---
 
-## 📌 Notes
+## Notes
 
 This project focuses on:
 
