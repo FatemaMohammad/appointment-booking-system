@@ -152,6 +152,20 @@ This project focuses on:
 
 ---
 
+## 📸 Screenshots
+
+### Login
+![Login](docs/login.png)
+
+### Dashboard
+![Dashboard](docs/BookingSystem.png)
+
+### Available Slots
+![Slots](docs/AvailableSlots.png)
+
+### Bookings
+![Bookings](docs/ActivSlots.png)
+
 ## Author
 
 Fatema Mohammad
