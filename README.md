@@ -152,6 +152,8 @@ This project focuses on:
 
 ---
 
-## 👨‍💻 Author
+## Author
 
 Fatema Mohammad
+
+
