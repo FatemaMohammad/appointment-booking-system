@@ -1,3 +1,4 @@
+using BookingSystem.Api.Contracts;
 using BookingSystem.Application.Auth;
 using BookingSystem.Domain.Entities;
 using BookingSystem.Infrastructure.Persistence;
@@ -23,15 +24,15 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
-    public async Task<IActionResult> Register(string email, string password)
+    public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
-        if (await _db.Users.AnyAsync(u => u.Email == email))
+        if (await _db.Users.AnyAsync(u => u.Email == request.Email))
             return BadRequest("Email already exists");
 
         var user = new User
         {
-            Email = email,
-            PasswordHash = _hasher.Hash(password)
+            Email = request.Email,
+            PasswordHash = _hasher.Hash(request.Password)
         };
 
         _db.Users.Add(user);
@@ -41,10 +42,10 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
-    public async Task<IActionResult> Login(string email, string password)
+    public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == email);
-        if (user is null || !_hasher.Verify(user.PasswordHash, password))
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+        if (user is null || !_hasher.Verify(user.PasswordHash, request.Password))
             return Unauthorized();
 
         var token = _jwt.Generate(user);

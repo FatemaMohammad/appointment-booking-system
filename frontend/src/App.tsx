@@ -53,9 +53,9 @@ export default function App() {
       setLoggingIn(true);
 
       const data = await apiFetch<{ token: string }>(
-        `/api/auth/login?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`,
+        "/api/auth/login",
         "",
-        { method: "POST" }
+        { method: "POST", body: JSON.stringify({ email, password }) }
       );
 
       setToken(data.token);

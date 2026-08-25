@@ -75,9 +75,17 @@ public class AppDbContext : DbContext
             .HasConversion<string>();
 
         // IMPORTANT:
-        // We do NOT keep a unique index on TimeSlotId anymore,
-        // because cancelled bookings should not block the same slot forever.
-        // Active-booking conflict should instead be checked in application code.
+        // A plain unique index on TimeSlotId would block re-booking a slot after
+        // its previous booking was cancelled (the cancelled row would still "own"
+        // the slot). Instead, the index is unique only among Active bookings, so:
+        //   - two Active bookings can never share a TimeSlotId (DB-enforced, safe
+        //     under concurrent requests, not just the application-level check below)
+        //   - a Cancelled booking no longer reserves the slot for anyone else
+        modelBuilder.Entity<Booking>()
+            .HasIndex(b => b.TimeSlotId)
+            .IsUnique()
+            .HasFilter("\"Status\" = 'Active'")
+            .HasDatabaseName("IX_Bookings_TimeSlotId_ActiveOnly");
 
         // Optional relationships
         modelBuilder.Entity<Booking>()
